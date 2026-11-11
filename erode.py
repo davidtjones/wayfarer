@@ -73,7 +73,7 @@ def route(z, base, dx, jit):
 
 
 @njit(cache=True)
-def _step(z, base, pinned, U, K, soil, talus, jit, dx, dt, mexp, sweeps):
+def _step(z, base, pinned, U, K, soil, talus, jit, dx, dt, mexp, sweeps, sw, samp, period):
     n, m = z.shape
     for i in range(n):
         for j in range(m):
@@ -84,13 +84,17 @@ def _step(z, base, pinned, U, K, soil, talus, jit, dx, dt, mexp, sweeps):
     zf = z.ravel()
     Kf = K.ravel()
     pf = pinned.ravel()
+    swf = sw.ravel()
+    sampf = samp.ravel()
     for q in range(n * m):
         i = order[q]
         r = rcv[i]
         if r == i or pf[i]:
             continue
         ch = min(area[i] / 3000.0, 1.0)          # below this, slopes not channels
-        F = Kf[i] * dt * ch * ch * area[i] ** mexp / dist[i]
+        hard = 0.5 + 0.5 * np.sin(6.2832 * (zf[i] + swf[i]) / period)
+        hard = hard * hard * sampf[i]                     # 0 soft bed .. 1 hard bed
+        F = Kf[i] * (1 - 0.7 * hard) * dt * ch * ch * area[i] ** mexp / dist[i]
         zf[i] = (zf[i] + F * zf[r]) / (1 + F)
     # slopes above the stable angle shed material downhill
     for _ in range(sweeps):
@@ -99,9 +103,11 @@ def _step(z, base, pinned, U, K, soil, talus, jit, dx, dt, mexp, sweeps):
             for j in range(1, m - 1):
                 if base[i, j] or pinned[i, j]:
                     continue
+                hard = 0.5 + 0.5 * np.sin(6.2832 * (z[i, j] + sw[i, j]) / period)
+                tl = talus[i, j] * (1 + 1.6 * hard * hard * samp[i, j])
                 for k in range(8):
                     a, b = i + DI[k], j + DJ[k]
-                    ex = z[i, j] - z[a, b] - talus[i, j] * DD[k] * dx
+                    ex = z[i, j] - z[a, b] - tl * DD[k] * dx
                     if ex > 0:
                         d[i, j] -= 0.08 * ex
                         if not base[a, b] and not pinned[a, b]:
@@ -127,12 +133,17 @@ def form(lay, steps=140, dt=1.0e4, mexp=0.4, log=None):
     pinned = f["lake"].copy()
     z = np.where(base, 0.0, f["z0"]).astype(np.float64)
     jit = np.random.default_rng(lay.seed + 77).uniform(0, 0.6, z.shape + (8,))
-    z[pinned] = lay.lake_z
+    pin_z = f.get("pin_z", lay.lake_z)            # one level, or a level per cell
+    pz = pin_z[pinned] if isinstance(pin_z, np.ndarray) else pin_z
+    z[pinned] = pz
     area = None
+    zero = np.zeros_like(z)
+    sw, samp = f.get("strata_warp", zero), f.get("strata_amp", zero)   # optional layered rock
+    period = float(f.get("strata_period", 60.0))
     for s in range(steps):
         area = _step(z, base, pinned, f["U"], f["K"], f["soil"], f["talus"], jit,
-                     lay.dx, dt, mexp, 3)
-        z[pinned] = lay.lake_z
+                     lay.dx, dt, mexp, 3, sw, samp, period)
+        z[pinned] = pz
         z[base] = 0.0
         if log and s % 20 == 0:
             log(f"  step {s:3d}  max {z.max():6.0f} m  mean land {z[f['land']].mean():5.0f} m")
