@@ -81,8 +81,14 @@ def find_route(W, a, b, step=20.0):
     z = W["z"][::s, ::s]
     dx = W["dx"] * s
     block = (~W["land"] | W["lake"])[::s, ::s]
-    river = (W["area"][::s, ::s] > 6e5) & ~block
-    extra = np.where(river, 120.0, 0.0)
+    if "river" in W:
+        # a ford costs a detour's worth, and a road keeps off the bank beside the water
+        wet = ndimage.maximum_filter(W["river"], s)[::s, ::s] & ~block
+        bank = (W["river_z"] > -999)[::s, ::s] & ~block
+        extra = np.where(wet, 160.0, np.where(bank, 40.0, 0.0))
+    else:
+        river = (W["area"][::s, ::s] > 6e5) & ~block
+        extra = np.where(river, 120.0, 0.0)
     ij = lambda p: (int(p[1] / dx), int(p[0] / dx))
     block = block.copy()
     for p in (a, b):

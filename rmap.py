@@ -19,7 +19,7 @@ def diag(W, PL, px=1100):
         c[W["floor"]] = c[W["floor"]] * 0.8 + np.array([255, 255, 200]) * 0.2
     c[~W["land"]] = (38, 66, 104)
     c[W["lake"]] = (70, 120, 170)
-    c[(W["area"] > 4e5) & W["land"] & ~W["lake"]] = (80, 130, 180)
+    c[W["river"]] = (60, 120, 200)
     lab = W["label"]
     edge = (lab != np.roll(lab, 1, 0)) | (lab != np.roll(lab, 1, 1))
     c[edge & W["land"]] = (255, 90, 90)

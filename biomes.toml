@@ -1,0 +1,234 @@
+# What lives in each kind of room, and where.
+#
+# One table per room theme, one sub-table per layer (grass, reeds, bushes,
+# rocks, trees, and the undergrowth: ferns, flowers, heather, scrub). `biomes.py` reads this; `export_game3d.py` turns it into the
+# maps and tree lists the game loads.
+#
+# A layer has an amount (`density`, or `cover` for trees) and, optionally, how
+# it responds to the conditions at a spot. A response is a pair [none, full]:
+# the layer is absent at the first value and at full strength at the second.
+# Put the larger number first for something that likes less of a condition
+# (`canopy = [0.9, 0.3]`: none under closed canopy, full in the open).
+#
+# Conditions measured on the world grid, each 0..1:
+#   wet     drainage lines, hollows, ground beside a lake
+#   shade   north-facing slopes
+#   ridge   ground standing above its surroundings
+#   high    closeness to the treeline
+#   canopy  tree cover
+#   edge    1 at the edge of a stand of trees, 0 deep inside or far outside
+#   slope   steepness, as rise over run (not 0..1: 1.0 is 45 degrees)
+#
+# Conditions the game checks against the exact ground height, in metres above
+# the water surface (negative = under water):
+#   above_lake, above_sea   [none, full], for grass
+#   band                    [lowest, highest], for reeds (lakes only)
+#
+# Bushes grow in thickets. `amount` scales the whole layer (and takes the site
+# responses above); the other keys weight where thickets form, each 0..1:
+# `mantle` (around stands of trees), `gullies` (drainage lines), `banks` (above
+# a lake shore), `hedges` (broken rows beside roads), `thickets` (clumps on
+# open ground). `singles` is lone bushes per hectare outside thickets.
+#
+# Rooms blend into each other. `blend` is the distance in metres over which one
+# room's life gives way to the next: short along a wall, long through a door,
+# so a meadow reaches into the desert where the road goes through. `pairs`
+# overrides the width for one pair of themes, wall or door.
+
+[blend]
+wall = 50
+open = 400                # a border with no mountains or cliff on it
+door = 220
+door_reach = 140          # how far along the border a door's wide blend extends
+
+[blend.pairs]
+"desert-field" = 320
+"desert-lake" = 280
+"ash-forest" = 120
+
+# --- field: open farmland and meadow ---------------------------------------
+
+[field.grass]
+density = 1.0
+above_lake = [0.2, 0.7]
+above_sea = [1.4, 2.8]
+
+[field.reeds]
+density = 0.6
+band = [-0.50, 0.45]
+
+[field.bushes]
+amount = 1.0
+mantle = 0.9
+gullies = 0.8
+banks = 0.6
+hedges = 0.7
+thickets = 0.45
+singles = 1.0
+
+[field.flowers]
+density = 0.55
+canopy = [0.6, 0.15]
+
+[field.ferns]
+density = 0.12
+wet = [0.3, 0.8]
+
+[field.rocks]
+density = 0.20
+
+[field.trees]
+cover = 0.22              # how readily stands form
+limit = 1.0               # most canopy this theme allows
+copses = 1.0              # small clumps on open ground
+oak = 0.5
+
+# --- lake: green basin around standing water ---------------------------------
+
+[lake.grass]
+density = 1.0
+above_lake = [0.15, 0.6]
+above_sea = [1.4, 2.8]
+
+[lake.reeds]
+density = 1.0
+band = [-0.60, 0.55]
+
+[lake.bushes]
+amount = 1.0
+mantle = 0.9
+gullies = 0.8
+banks = 1.0
+hedges = 0.3
+thickets = 0.4
+singles = 1.0
+
+[lake.flowers]
+density = 0.40
+canopy = [0.6, 0.15]
+
+[lake.ferns]
+density = 0.25
+wet = [0.2, 0.7]
+
+[lake.rocks]
+density = 0.22
+
+[lake.trees]
+cover = 0.34
+limit = 1.0
+copses = 0.85
+birch = 0.35
+
+# --- forest ------------------------------------------------------------------
+
+[forest.grass]
+density = 0.9
+canopy = [0.95, 0.35]
+above_lake = [0.2, 0.7]
+above_sea = [1.4, 2.8]
+
+[forest.reeds]
+density = 0.5
+band = [-0.45, 0.40]
+
+[forest.bushes]
+amount = 1.0
+mantle = 1.0
+gullies = 0.7
+banks = 0.8
+thickets = 0.5
+singles = 2.0
+
+[forest.ferns]
+density = 0.85
+canopy = [0.15, 0.6]    # ferns want shade: none in the open, full under trees
+
+[forest.flowers]
+density = 0.30
+canopy = [0.55, 0.1]    # glades only
+
+[forest.rocks]
+density = 0.25
+
+[forest.trees]
+cover = 0.80
+limit = 1.0
+copses = 0.55
+spruce = 0.45
+
+# --- desert --------------------------------------------------------------------
+
+[desert.grass]
+density = 0.0
+above_lake = [0.3, 1.0]
+above_sea = [2.0, 3.5]
+
+[desert.bushes]
+amount = 1.0
+wet = [0.35, 0.8]         # only where water gathers
+gullies = 0.8
+banks = 0.7
+singles = 0.3
+
+[desert.scrub]
+density = 0.55
+
+[desert.rocks]
+density = 0.55
+
+[desert.trees]
+cover = 0.0
+limit = 0.0
+copses = 0.0
+
+# --- ash: volcanic waste ---------------------------------------------------------
+
+[ash.grass]
+density = 0.0
+
+[ash.scrub]
+density = 0.10
+
+[ash.rocks]
+density = 0.95
+
+[ash.trees]
+cover = 0.0
+limit = 0.0
+copses = 0.0
+
+# --- moor: high open ground ------------------------------------------------------
+
+[moor.grass]
+density = 0.75
+above_lake = [0.2, 0.7]
+above_sea = [1.4, 2.8]
+
+[moor.reeds]
+density = 0.4
+band = [-0.35, 0.35]
+
+[moor.bushes]
+amount = 1.0
+ridge = [0.9, 0.3]
+mantle = 0.6
+gullies = 0.9
+thickets = 0.35
+singles = 1.5
+
+[moor.heather]
+density = 0.85
+
+[moor.flowers]
+density = 0.10
+
+[moor.rocks]
+density = 0.70
+
+[moor.trees]
+cover = 0.10
+limit = 0.22
+copses = 0.25
+pine = 0.5
+snag = 0.9

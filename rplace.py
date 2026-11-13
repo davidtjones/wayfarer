@@ -34,7 +34,7 @@ def place(W, log=print):
     xy = lambda ij: np.array([(ij[1] + 0.5) * dx, (ij[0] + 0.5) * dx])
     prom = z - ndimage.uniform_filter(z, int(300 / dx))
     lake_d = ndimage.distance_transform_edt(~W["lake"]) * dx
-    riv_d = ndimage.distance_transform_edt(~(W["area"] > 4e5)) * dx
+    riv_d = ndimage.distance_transform_edt(~W["river"]) * dx
     sea_d = ndimage.distance_transform_edt(W["land"]) * dx
 
     floor = np.zeros((n, n), bool)
@@ -111,6 +111,10 @@ def grade_roads(W, roads, half=10.0, fade=38.0):
             den[i - r:i + r + 1, j - r:j + r + 1] += w
     m = (den > 0) & W["land"] & ~W["lake"]
     a = np.clip(den, 0, 1)
+    if "river" in W:
+        # a road leaves the river's bed and banks as they are, and comes down to a ford
+        off = ndimage.distance_transform_edt(W["river_z"] < -999) * dx
+        a = a * np.clip(off / 30.0, 0, 1) ** 2
     z[m] = z[m] * (1 - a[m]) + (num[m] / den[m]) * a[m]
     gy, gx = np.gradient(z, dx)
     W["slope"] = np.hypot(gx, gy)

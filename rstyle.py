@@ -4,6 +4,7 @@ import numpy as np
 from scipy import ndimage
 from style import flow, _stream_base
 from noise import fbm
+from rivers import carve
 
 
 def finish(lay, z, log=print):
@@ -12,7 +13,21 @@ def finish(lay, z, log=print):
     sea = ~f["land"]
     X, Y = lay.grid()
     lab0 = np.maximum(f["label"], 0)
-    tw = lambda name: ndimage.gaussian_filter(np.array([t == name for t in R["theme"]], float)[lab0], 3.0)
+    # Themes fade into each other over a few hundred metres, along a ragged line
+    # rather than the ruled room border. Across high ground they blend wider still,
+    # so a range is not painted half and half down its crest.
+    brng = np.random.default_rng(lay.seed + 31)
+    ii, jj = np.indices((n, n))
+    wi = np.clip(ii + np.rint(11 * fbm(n, 9, 3, brng) + 4 * fbm(n, 30, 2, brng)).astype(int), 0, n - 1)
+    wj = np.clip(jj + np.rint(11 * fbm(n, 9, 3, brng) + 4 * fbm(n, 30, 2, brng)).astype(int), 0, n - 1)
+    labw = np.where(f["land"][wi, wj], lab0[wi, wj], lab0)
+    landf = f["land"].astype(float)
+
+    def tw(name):
+        w = np.array([t == name for t in R["theme"]], float)[labw] * landf
+        blur = lambda sg: ndimage.gaussian_filter(w, sg) / np.maximum(ndimage.gaussian_filter(landf, sg), 1e-3)
+        near, wide = blur(9.0), blur(30.0)
+        return near + (wide - near) * np.clip(f["prof"] * 4.0, 0, 1)
 
     # 1. valley floors: flatten ground that sits just above a real stream
     zf, rcv, order, area = flow(z, sea, dx)
@@ -32,9 +47,14 @@ def finish(lay, z, log=print):
             continue
         m = f["label"] == i
         inner = np.where(m, np.minimum(f["wall_d"], f["coast_d"]), 0)
+        if np.any(R.get("mount", False)):
+            # in mountain country the cone stands deep in the massif, not in the middle of its own room
+            mm = np.asarray(R["mount"])[np.maximum(f["label"], 0)] & f["land"]
+            deep = ndimage.distance_transform_edt(mm) * lay.dx
+            inner = np.where(m, np.minimum(deep, f["coast_d"]), 0)
         k = np.unravel_index(np.argmax(inner), inner.shape)
         v = np.array([X[k], Y[k]])
-        Rc = float(np.clip(inner[k] * 0.9, 350, 900))
+        Rc = float(np.clip(inner[k] * 0.9, 350, 1300))
         Hc, rc = 0.42 * Rc, 0.09 * Rc
         r = np.hypot(X - v[0], Y - v[1])
         th = np.arctan2(Y - v[1], X - v[0])
@@ -72,12 +92,33 @@ def finish(lay, z, log=print):
     crag = 1 - np.abs(fbm(N, 22, 4, rng, gain=0.55)) * 2.2                  # sharp-crested noise
     Z = Z + wallw * np.clip((Z - 220) / 300, 0, 1) * 40 * (crag - 0.45)
     Z = np.where(land2, np.maximum(Z, 0.3), -6.0)
+    # A lake's surface is set by its lowest shore, as real water is: it spills
+    # there. Erosion may have cut the ground beside a lake below the level it was
+    # designed at, and water left at that level would hang in the air.
+    lab_l, k_l = ndimage.label(lake2)
+    for q in range(1, k_l + 1):
+        m = lab_l == q
+        if m.sum() * (dx / 2) ** 2 < 2e4:           # a sliver is not a lake
+            lake2[m] = False
+            continue
+        ring = ndimage.binary_dilation(m, iterations=3) & ~m & land2
+        if ring.any():
+            pin2[m] = min(float(pin2[m].max()), float(Z[ring].min()) - 0.3)
     Z[lake2] = pin2[lake2]
+    # A lake whose level dropped is left in a pit with rock walls. Ease the ground
+    # round it back to banks a lake would have: gentle on most sides, steeper on some.
+    d_l, (ni, nj) = ndimage.distance_transform_edt(~lake2, return_indices=True)
+    d_l = d_l * dx / 2
+    grade = 0.22 + 0.5 * np.clip(0.5 + 1.2 * fbm(N, 6, 3, rng), 0, 1) ** 2
+    eased = np.minimum(Z, pin2[ni, nj] + 0.5 + grade * d_l)
+    Z = np.where(land2 & ~lake2, Z + (eased - Z) * (1 - np.clip((d_l - 90) / 130, 0, 1) ** 2), Z)
     shore = ndimage.binary_dilation(lake2, iterations=2) & ~lake2
     near = ndimage.maximum_filter(pin2, 5)
     Z[shore] = np.maximum(Z[shore], near[shore] + 0.4)
 
-    W = dict(z=Z, land=land2, lake=lake2, lake_zmap=pin2, dx=dx / 2, n=N, pts=pts, seed=lay.seed,
+    Z, river, river_z, _ = carve(Z, land2, lake2, pin2, dx / 2, lay.seed, log=log)
+
+    W = dict(z=Z, land=land2, lake=lake2, lake_zmap=pin2, river=river, river_z=river_z, dx=dx / 2, n=N, pts=pts, seed=lay.seed,
              label=label2, wallw=wallw, butte=wd * edge, desert=des, ash=ash, moor=moor, forest=forest,
              field=field, rooms=R, w=lay.w, nn=lay.nn)
     zf, rcv, order, area = flow(Z, ~land2, W["dx"])
