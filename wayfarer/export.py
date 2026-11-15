@@ -22,6 +22,10 @@ G flowers, B heather, A scrub) and shore.png (how far
 above the water grass starts and where reeds stand), for the layers the game
 scatters itself.
 
+rooms.png says which room each cell belongs to (R = room index, 255 off the
+island), and world.txt has a `room <index> <theme>` line per room, so the game
+can put things in a kind of land by name (creatures live in their habitat).
+
 A tree line is `tree x y z height species`, species 0 spruce, 1 pine, 2 oak,
 3 birch, 4 dead snag, 5 bush.
 """
@@ -187,9 +191,16 @@ def export(W, PL, M, out):
     Image.fromarray(np.stack([u8(a) for a in under], -1)[::-1], "RGBA").save(f"{out}/under.png")
     shore_map = np.stack([u8(g_lo / 4), u8(g_hi / 4), u8((r_lo + 1) / 2), u8((r_hi + 1) / 2)], -1)
     Image.fromarray(shore_map[::-1], "RGBA").save(f"{out}/shore.png")
+    # rooms.png: which room each cell belongs to, R = room index, 255 off the
+    # island. Crisp, unlike the blended theme weights: read it nearest, not bilinear.
+    assert len(R["theme"]) < 255, "rooms.png holds at most 254 rooms"
+    rooms = np.where(W["label"] >= 0, W["label"], 255).astype(np.uint8)
+    full = np.full((n, n), 255, np.uint8)
+    Image.fromarray(np.stack([rooms, full, full, full], -1)[::-1], "RGBA").save(f"{out}/rooms.png")
 
     # --- structures, trees, shots --------------------------------------------
     lines = [f"extent {half}", "sea 0"]
+    lines += [f"room {i} {theme}" for i, theme in enumerate(R["theme"])]
     stone, roofc = (0.55, 0.53, 0.50), (0.42, 0.17, 0.10)
     tcol = dict(field=stone, lake=(0.86, 0.86, 0.82), forest=(0.44, 0.42, 0.38), desert=(0.72, 0.48, 0.30),
                 ash=(0.17, 0.15, 0.15), moor=(0.60, 0.58, 0.54))
