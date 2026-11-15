@@ -14,7 +14,9 @@ water surface in it.
 
 Returns the new ground, the river cells, and the water level over a ribbon a
 little wider than the river (-1000 elsewhere). The game draws the ribbon; the
-ground hides it wherever it is not river.
+ground hides it wherever it is not river. The last return value also carries
+`velocity`: over the same ribbon, which way the water runs and how fast (m/s,
+array x and y), so the game can tell a river from a lake and move its surface.
 """
 import numpy as np
 from numba import njit
@@ -116,6 +118,8 @@ def _splat(rcv, chan, lake, L, px, py, wd, run, n, m, dx, reach):
     lev = np.full((n, m), DRY)
     wid = np.zeros((n, m))
     src = np.zeros((n, m))
+    vx = np.zeros((n, m))
+    vy = np.zeros((n, m))
     k = int(reach / dx) + 2
     for i in range(rcv.size):
         r = rcv[i]
@@ -124,6 +128,10 @@ def _splat(rcv, chan, lake, L, px, py, wd, run, n, m, dx, reach):
         ax, ay, bx, by = px[i], py[i], px[r], py[r]
         ex, ey = bx - ax, by - ay
         ee = ex * ex + ey * ey + 1e-9
+        # How fast this stretch runs, m/s: a walking pace on the flat, quicker
+        # the steeper it falls.
+        el = np.sqrt(ee)
+        speed = min(0.35 + 6.0 * np.sqrt(max(L[i] - L[r], 0.0) / el), 3.0)
         ci, cj = int(ay / dx), int(ax / dx)
         for a in range(max(ci - k, 0), min(ci + k + 1, n)):
             for b in range(max(cj - k, 0), min(cj + k + 1, m)):
@@ -136,7 +144,9 @@ def _splat(rcv, chan, lake, L, px, py, wd, run, n, m, dx, reach):
                     lev[a, b] = L[i] + t * (L[r] - L[i])
                     wid[a, b] = wd[i] + t * (wd[r] - wd[i])
                     src[a, b] = run[i] + t * (run[r] - run[i])
-    return dist, lev, wid, src
+                    vx[a, b] = ex / el * speed
+                    vy[a, b] = ey / el * speed
+    return dist, lev, wid, src, vx, vy
 
 
 def _ss(x, a, b):
@@ -168,7 +178,7 @@ def carve(Z, land, lake, lake_z, dx, seed, a_min=6e5, a_feed=1.2e5, log=print):
     _grade(rcv, order, chan, lakef, L, m, dx, 0.18)
     reach = 15 + 60.0
     run = _run(rcv, order, chan, lakef, dx)
-    dist, lev, wid, src = _splat(rcv, chan, lakef, L, px, py, wd, run, n, m, dx, reach)
+    dist, lev, wid, src, vx, vy = _splat(rcv, chan, lakef, L, px, py, wd, run, n, m, dx, reach)
     half = wid / 2
     depth = np.clip(0.5 + 0.05 * wid, 1.0, 1.8)
     # A river does not begin full width. Near its head the same bed holds less
@@ -198,4 +208,10 @@ def carve(Z, land, lake, lake_z, dx, seed, a_min=6e5, a_feed=1.2e5, log=print):
     drop = np.abs(L[chan] - L[rcv[chan]]) / dx
     log(f"  rivers: {km:.1f} km, {k} lakes, steepest fall {drop.max() * 100:.0f}%, "
         f"{(drop > 0.25).mean() * 100:.0f}% of length steeper than 1 in 4")
-    return Z2, river, level, dict(chan=chan.reshape(n, m), area=area.reshape(n, m), rcv=rcv, L=L.reshape(n, m))
+    # Which way and how fast the water runs, over the same ribbon as the level.
+    # A handful of cells' directions are averaged so a bend turns smoothly.
+    vx, vy = (ndimage.uniform_filter(np.where(ribbon, v, 0.0), 5) for v in (vx, vy))
+    share = np.maximum(ndimage.uniform_filter(ribbon.astype(float), 5), 1e-6)
+    velocity = np.where(ribbon[..., None], np.stack([vx, vy], -1) / share[..., None], 0.0)
+    return Z2, river, level, dict(chan=chan.reshape(n, m), area=area.reshape(n, m), rcv=rcv, L=L.reshape(n, m),
+                                  velocity=velocity)

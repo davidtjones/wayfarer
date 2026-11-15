@@ -116,9 +116,10 @@ def finish(lay, z, log=print):
     near = ndimage.maximum_filter(pin2, 5)
     Z[shore] = np.maximum(Z[shore], near[shore] + 0.4)
 
-    Z, river, river_z, _ = carve(Z, land2, lake2, pin2, dx / 2, lay.seed, log=log)
+    Z, river, river_z, course = carve(Z, land2, lake2, pin2, dx / 2, lay.seed, log=log)
 
-    W = dict(z=Z, land=land2, lake=lake2, lake_zmap=pin2, river=river, river_z=river_z, dx=dx / 2, n=N, pts=pts, seed=lay.seed,
+    W = dict(z=Z, land=land2, lake=lake2, lake_zmap=pin2, river=river, river_z=river_z,
+             river_flow=course["velocity"], dx=dx / 2, n=N, pts=pts, seed=lay.seed,
              label=label2, wallw=wallw, butte=wd * edge, desert=des, ash=ash, moor=moor, forest=forest,
              field=field, rooms=R, w=lay.w, nn=lay.nn)
     zf, rcv, order, area = flow(Z, ~land2, W["dx"])

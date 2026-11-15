@@ -2,7 +2,8 @@
 
     pixi run python export_game3d.py <seed> <name> [key=value ...]
 
-Writes ../../game3d/assets/terrain/<name>/ : terrain.raster, lake.raster, tint.png,
+Writes ../../game3d/assets/terrain/<name>/ : terrain.raster, lake.raster,
+flow_x.raster and flow_z.raster (river current), tint.png,
 cover.png, paths.png, world.txt (structures, trees, shots) and report.json (the measurements).
 
 cover.png says what the ground is made of, one channel per material, same grid
@@ -82,6 +83,11 @@ def export(W, PL, M, out):
     # Rivers: a sloping level over a ribbon wider than the water; the ground hides the rest.
     lvl = np.where(lvl > -999, lvl, W["river_z"])
     _raster(f"{out}/lake.raster", ndimage.map_coordinates(lvl, [rr, cc], order=0, mode="constant", cval=-1000.0))
+    # Which way a river runs and how fast, m/s along game x and z; zero on lakes.
+    still = ndimage.maximum_filter(np.where(lake, 1.0, 0.0), 5) > 0
+    for axis, sign, name in ((0, 1.0, "flow_x"), (1, -1.0, "flow_z")):
+        v = np.where(still, 0.0, sign * W["river_flow"][..., axis])
+        _raster(f"{out}/{name}.raster", ndimage.map_coordinates(v, [rr, cc], order=0, mode="constant", cval=0.0))
     lake = lake | W["river"]                                # from here on, any fresh water
 
     # --- ground colour by room theme -----------------------------------------
