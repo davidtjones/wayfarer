@@ -17,8 +17,25 @@ where water is pinned). `erode.form` turns them into land.
 from dataclasses import dataclass, field
 import numpy as np
 from scipy import ndimage
-from layout import Layout
-from noise import fbm
+from .noise import fbm
+
+
+@dataclass
+class Layout:
+    """A designed world before the land forms: grid, named points, design fields."""
+    seed: int
+    n: int
+    dx: float
+    pts: dict = field(default_factory=dict)     # named design points, metres (x east, y north)
+    w: np.ndarray = None                        # unit vector west
+    nn: np.ndarray = None                       # unit vector north
+    lake_z: float = 14.0                        # water level where no per-cell level is pinned
+    f: dict = field(default_factory=dict)       # design fields, n x n
+
+    def grid(self):
+        c = (np.arange(self.n) + 0.5) * self.dx
+        return np.meshgrid(c, c)                # X, Y with row = y
+
 
 THEMES = {
     #          floor relief  K mult  soil  talus  wall mult

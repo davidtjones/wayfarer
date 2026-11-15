@@ -1,6 +1,6 @@
 """Contact sheet of the wall shots of a game3d capture: one row per wall.
 
-    pixi run python wsheet.py <capture_dir> <out.jpg>
+    pixi run python -m tools.wall_sheet <capture_dir> <out.jpg>
 """
 import glob
 import os

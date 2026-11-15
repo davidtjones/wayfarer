@@ -1,6 +1,6 @@
 """Contact sheets of game3d captures: one row per door (before, at, after).
 
-    pixi run python gsheet.py <capture_dir> <out_prefix>
+    pixi run python -m tools.door_sheet <capture_dir> <out_prefix>
 """
 import glob
 import os

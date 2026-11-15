@@ -21,7 +21,8 @@ array x and y), so the game can tell a river from a lake and move its surface.
 import numpy as np
 from numba import njit
 from scipy import ndimage
-from style import flow
+from .erode import flow
+from .noise import smoothstep
 
 DRY = -1000.0
 
@@ -149,11 +150,6 @@ def _splat(rcv, chan, lake, L, px, py, wd, run, n, m, dx, reach):
     return dist, lev, wid, src, vx, vy
 
 
-def _ss(x, a, b):
-    t = np.clip((x - a) / (b - a), 0, 1)
-    return t * t * (3 - 2 * t)
-
-
 def carve(Z, land, lake, lake_z, dx, seed, a_min=6e5, a_feed=1.2e5, log=print):
     n, m = Z.shape
     zf, rcv, order, area = flow(Z, ~land, dx, seed)
@@ -183,7 +179,7 @@ def carve(Z, land, lake, lake_z, dx, seed, a_min=6e5, a_feed=1.2e5, log=print):
     depth = np.clip(0.5 + 0.05 * wid, 1.0, 1.8)
     # A river does not begin full width. Near its head the same bed holds less
     # water, so the stream starts as a trickle in the bottom and widens.
-    water = lev - 1.05 * depth * (1 - _ss(src, 0, 260)) ** 1.5
+    water = lev - 1.05 * depth * (1 - smoothstep(src, 0, 260)) ** 1.5
     out = dist - half                            # metres outside the water's edge
     u = np.clip(dist / np.maximum(half, 1), 0, 1)
     near = (dist < 1e8) & land & ~lake
@@ -192,7 +188,7 @@ def carve(Z, land, lake, lake_z, dx, seed, a_min=6e5, a_feed=1.2e5, log=print):
     cut = np.where(out < 0, bed, bank)
     low = np.where(out < 0, bed, lev + np.minimum(0.25 * np.maximum(out, 0), 0.7))
     Zn = np.maximum(np.minimum(Z, cut), low)
-    fade = 1 - _ss(out, 14, reach - 16)
+    fade = 1 - smoothstep(out, 14, reach - 16)
     Zn = Z + (Zn - Z) * fade
     Z2 = np.where(near, Zn, Z)
     river = near & (out < 0)
@@ -201,7 +197,7 @@ def carve(Z, land, lake, lake_z, dx, seed, a_min=6e5, a_feed=1.2e5, log=print):
     # At the mouth the river slips just under the sea's surface, so the two
     # waters meet without an edge. The bed there is below sea level already.
     sea_d = ndimage.distance_transform_edt(land) * dx
-    water = water - 0.5 * (1 - _ss(sea_d, 0, 70))
+    water = water - 0.5 * (1 - smoothstep(sea_d, 0, 70))
     level = np.where(ribbon, water, DRY)
     river &= water > Z2 + 0.05                   # the dry bed above a head is not river
     km = chan.sum() * dx * 1.2 / 1000

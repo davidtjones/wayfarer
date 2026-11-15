@@ -1,10 +1,11 @@
-"""Write a rooms world as a game3d world directory (see game3d/src/world.rs).
+"""Write a rooms world as a game3d world directory (see game3d/src/world/mod.rs).
 
-    pixi run python export_game3d.py <seed> <name> [key=value ...]
+    pixi run export <seed> <name> [key=value ...] [--doors=1,4 | --doors=hub]
 
-Writes ../../game3d/assets/terrain/<name>/ : terrain.raster, lake.raster,
-flow_x.raster and flow_z.raster (river current), tint.png,
-cover.png, paths.png, world.txt (structures, trees, shots) and report.json (the measurements).
+Writes <game3d>/assets/terrain/<name>/ (workspace.py says how game3d is found):
+terrain.raster, lake.raster, flow_x.raster and flow_z.raster (river current),
+tint.png, cover.png, paths.png, world.txt (structures, trees, shots) and
+report.json (the measurements).
 
 cover.png says what the ground is made of, one channel per material, same grid
 as tint.png: R loose sand (desert floor, beaches, lake shores), G meadow (where
@@ -31,15 +32,15 @@ import sys
 import numpy as np
 from PIL import Image
 from scipy import ndimage
-from rrun import build, parse
-from rmap import diag
-from place import ground
-from dress import _ss
-from noise import fbm
-from trees import plant
-from paths import network, path_map, PIXEL
-from wallshots import wall_shots, lake_shots, river_shots
-import biomes
+from . import biomes
+from .build import build, parse
+from .noise import fbm, smoothstep
+from .paths import PIXEL, network, path_map
+from .place import ground
+from .preview import diag
+from .shots import lake_shots, river_shots, wall_shots
+from .trees import plant
+from .workspace import world_dir
 
 ONLY = [int(v) for a in sys.argv if a.startswith("--doors=") and a != "--doors=hub" for v in a[8:].split(",")]
 HUB = "--doors=hub" in sys.argv                         # only the doors of room 0
@@ -120,25 +121,25 @@ def export(W, PL, M, out):
     woods = ndimage.gaussian_filter(canopy, 2.0)
     # grass is only drawn as blades near the camera, so the ground itself must be green
     green = np.array([0.36, 0.50, 0.20])[None, None] * (0.9 + 0.25 * n1[..., None]) \
-        + np.array([0.10, 0.04, -0.02]) * _ss(W["field"], 0.3, 0.7)[..., None]
+        + np.array([0.10, 0.04, -0.02]) * smoothstep(W["field"], 0.3, 0.7)[..., None]
     rgba[..., :3] = green
     rgba[..., 3] = 0.88
-    lay((0.20, 0.31, 0.14), 0.75 * _ss(woods, 0.2, 0.7))
-    lay((0.42, 0.40, 0.24), 0.85 * _ss(W["moor"] + 0.35 * n1, 0.25, 0.8))
-    lay((0.42, 0.40, 0.25), 0.8 * _ss(zz, 300, 440))
+    lay((0.20, 0.31, 0.14), 0.75 * smoothstep(woods, 0.2, 0.7))
+    lay((0.42, 0.40, 0.24), 0.85 * smoothstep(W["moor"] + 0.35 * n1, 0.25, 0.8))
+    lay((0.42, 0.40, 0.25), 0.8 * smoothstep(zz, 300, 440))
     band = 0.5 + 0.5 * np.sin((zz + 25 * n1) / 6.0)
     sand = np.array([0.80, 0.60, 0.38])[None, None] * (0.92 + 0.16 * n2[..., None])
     strata = np.array([0.62, 0.33, 0.20]) * (1 - band[..., None]) + np.array([0.78, 0.58, 0.40]) * band[..., None]
-    st = _ss(slope, 0.4, 0.75)[..., None]
-    des = _ss(W["desert"] + 0.35 * n1, 0.25, 0.8)
+    st = smoothstep(slope, 0.4, 0.75)[..., None]
+    des = smoothstep(W["desert"] + 0.35 * n1, 0.25, 0.8)
     dcol = sand * (1 - st) + strata * st
     rgba[..., :3] = rgba[..., :3] * (1 - des[..., None]) + dcol * des[..., None]
     rgba[..., 3] = rgba[..., 3] * (1 - des) + 1.0 * des
-    ash = _ss(W["ash"] + 0.35 * n1, 0.25, 0.8)
+    ash = smoothstep(W["ash"] + 0.35 * n1, 0.25, 0.8)
     lay((0.20, 0.19, 0.19), 0.97 * ash)
     gy_, _ = np.gradient(zz, dx)
     snowline = 520 + 60 * n1 + 80 * gy_ / (slope + 1e-6)
-    snow = _ss(zz, snowline, snowline + 60) * (1 - _ss(slope, 1.0, 1.4))
+    snow = smoothstep(zz, snowline, snowline + 60) * (1 - smoothstep(slope, 1.0, 1.4))
     lay((0.93, 0.95, 0.98), 0.97 * snow)
     lake_near = ndimage.binary_dilation(W["lake"], iterations=3) | ndimage.binary_dilation(W["river"])
     shore = ((zz < 2.5) | (lake_near & ~lake)).astype(float)
@@ -147,7 +148,7 @@ def export(W, PL, M, out):
     # are in paths.png, which is fine enough to draw them; this grid is not.
     town_d = np.min([np.hypot(*(np.indices((n, n))[::-1] * dx + dx / 2 - np.array(p)[:, None, None]))
                      for p in S["town"]], 0)
-    path = _ss(town_d + 40 * n1, 95, 40) * 0.8
+    path = smoothstep(town_d + 40 * n1, 95, 40) * 0.8
     lay((0.46, 0.38, 0.27), 0.7 * path)
     img = (np.clip(rgba, 0, 1) * 255).astype(np.uint8)[::-1]            # north row first
     Image.fromarray(img, "RGBA").save(f"{out}/tint.png")
@@ -156,7 +157,7 @@ def export(W, PL, M, out):
     soft = lambda a: ndimage.gaussian_filter(np.clip(a, 0, 1), 0.8)
     c_sand = soft(np.maximum(des * (1 - st[..., 0]), shore))
     c_bare = soft(np.maximum(path, ash))
-    c_forest = soft(_ss(woods, 0.25, 0.7) * (1 - c_sand) * (1 - c_bare))
+    c_forest = soft(smoothstep(woods, 0.25, 0.7) * (1 - c_sand) * (1 - c_bare))
     # Grass, reeds and rocks come from the biome table; snow and town yards are bare.
     site_["slope"] = slope
     bare = 1 - np.maximum(snow, path)
@@ -353,5 +354,4 @@ def export(W, PL, M, out):
 if __name__ == "__main__":
     seed, name = int(sys.argv[1]), sys.argv[2]
     W, PL, M = build(seed, parse([a for a in sys.argv[3:] if "=" in a and not a.startswith("--")]))
-    here = os.path.dirname(os.path.abspath(__file__))
-    export(W, PL, M, os.path.join(here, "..", "..", "game3d", "assets", "terrain", name))
+    export(W, PL, M, world_dir(name))

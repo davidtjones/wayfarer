@@ -1,6 +1,6 @@
 """Print the sweep as one row per arm (mean of the seeds).
 
-    pixi run python sweep_table.py out/rooms/sweep.json
+    pixi run sweep-table out/rooms/sweep.json
 """
 import json
 import sys

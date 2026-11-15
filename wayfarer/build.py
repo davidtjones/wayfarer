@@ -1,15 +1,15 @@
 """Build one rooms world and measure it.
 
-    pixi run python rrun.py <seed> [key=value ...]     e.g. rooms=9 wall=160 loops=0.35 hub=1.6
+    pixi run build <seed> [key=value ...] [--map=out.png]     e.g. rooms=9 wall=160 loops=0.35 hub=1.6
 """
 import json
 import sys
 import time
 import numpy as np
-from rooms import make_rooms, Cfg
-from erode import form
-from rstyle import finish
-from rplace import place, measure
+from .erode import form
+from .place import measure, place
+from .rooms import Cfg, make_rooms
+from .style import finish
 
 
 def build(seed, cfg=Cfg(), log=print):
@@ -41,7 +41,7 @@ if __name__ == "__main__":
     W, PL, M = build(seed, parse(args))
     for a in sys.argv:
         if a.startswith("--map="):
-            from rmap import diag
+            from .preview import diag
             diag(W, PL).save(a[6:])
     for k in SHOW:
         v = M.get(k)

@@ -1,6 +1,6 @@
 """Collect game3d captures of exported worlds into one local page.
 
-    pixi run python gallery.py <name> [<name> ...]      -> out/rooms/index.html
+    pixi run gallery <name> [<name> ...]      -> out/rooms/index.html
 """
 import glob
 import json
@@ -8,22 +8,20 @@ import os
 import shutil
 import subprocess
 import sys
-
-HERE = os.path.dirname(os.path.abspath(__file__))
-G3D = os.path.join(HERE, "..", "..", "game3d")
+from wayfarer.workspace import ROOT, capture_dir, world_dir
 
 if __name__ == "__main__":
-    out = os.path.join(HERE, "out", "rooms")
+    out = os.path.join(ROOT, "out", "rooms")
     html = ["<html><body style='background:#15171a;color:#ddd;font-family:sans-serif;max-width:1500px;margin:auto'>",
             "<h1>Rooms and doors - game3d renders</h1>",
             "<p>Each row of a door sheet is one walk through one door: 180 m before, at the door, 180 m past it.</p>"]
     for name in sys.argv[1:]:
-        cap = os.path.join(G3D, "capture", name)
+        cap = capture_dir(name)
         dst = os.path.join(out, name)
         os.makedirs(dst, exist_ok=True)
-        subprocess.run([sys.executable, os.path.join(HERE, "gsheet.py"), cap, os.path.join(dst, "sheet")], check=True)
+        subprocess.run([sys.executable, "-m", "tools.door_sheet", cap, os.path.join(dst, "sheet")], cwd=ROOT, check=True)
         for f in ("map.png", "report.json"):
-            shutil.copy(os.path.join(G3D, "assets", "terrain", name, f), dst)
+            shutil.copy(os.path.join(world_dir(name), f), dst)
         if os.path.exists(f"{cap}/00_overview.png"):
             shutil.copy(f"{cap}/00_overview.png", dst)
         r = json.load(open(f"{dst}/report.json"))

@@ -22,3 +22,9 @@ def fbm(n, cells, octaves, rng, gain=0.5):
         if cells > n // 2:
             break
     return out / tot
+
+
+def smoothstep(x, a, b):
+    """0 below a, 1 above b, a smooth S between."""
+    t = np.clip((x - a) / (b - a), 0, 1)
+    return t * t * (3 - 2 * t)

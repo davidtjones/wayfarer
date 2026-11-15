@@ -2,7 +2,7 @@
 
 Three kinds, each a line with a width:
 
-- road: the graded routes `rplace.place` already lays from town to town through
+- road: the graded routes `place.place` already lays from town to town through
   each door. A cart's width of packed earth. Paved with rough cobbles only
   where people bothered: in and near a town, at a door, and the odd surviving
   stretch in between.
@@ -26,7 +26,7 @@ import numpy as np
 from scipy import ndimage
 from scipy.interpolate import CubicSpline
 from scipy.spatial import cKDTree
-from place import find_route
+from .place import find_route
 
 ROAD, FOOTPATH, TRAIL = 0, 1, 2
 HALF = [1.9, 0.8, 0.38]         # half width of each kind, metres

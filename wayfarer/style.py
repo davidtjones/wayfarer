@@ -1,10 +1,32 @@
-"""Regional character for a rooms world: the same deliberate exaggerations as
-style.py, driven by each room's theme instead of one fixed brief."""
+"""Regional character: deliberate departures from the eroded surface, driven by
+each room's theme.
+
+Each one is a known exaggeration that still reads natural: flat valley floors
+(room for roads and towns), a young cone in the first ash room, flat-topped
+buttes on desert floors, crags on the walls, then finer grain when the grid is
+refined. Lakes settle to their lowest shore, and `rivers.carve` cuts the rivers.
+"""
 import numpy as np
+from numba import njit
 from scipy import ndimage
-from style import flow, _stream_base
-from noise import fbm
-from rivers import carve
+from .erode import flow
+from .noise import fbm
+from .rivers import carve
+
+
+@njit(cache=True)
+def _stream_base(z, rcv, order, area, a_min):
+    """For every cell: height and size of the stream it drains into."""
+    n = z.size
+    base = z.copy()
+    sa = area.copy()
+    for q in range(n):
+        i = order[q]
+        r = rcv[i]
+        if r != i and area[i] < a_min:
+            base[i] = base[r]
+            sa[i] = sa[r]
+    return base, sa
 
 
 def finish(lay, z, log=print):

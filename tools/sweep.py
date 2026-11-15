@@ -1,12 +1,12 @@
 """Limits of rooms and doors: vary one thing at a time, three seeds each.
 
-    pixi run python sweep.py out/rooms/sweep.json
+    pixi run sweep out/rooms/sweep.json
 """
 import json
 import sys
 from dataclasses import asdict
-from rooms import Cfg
-from rrun import build
+from wayfarer.rooms import Cfg
+from wayfarer.build import build
 
 BASE = dict(rooms=9, wall=160.0, loops=0.35)
 ARMS = [("rooms", v) for v in (4, 6, 9, 12, 16, 22)] + [("wall", v) for v in (30.0, 70.0, 260.0)] \

@@ -1,14 +1,12 @@
 """Preview views of a rooms world, one walk through every door.
 
-    pixi run python rshots.py <seed> <out_dir> [key=value ...]
+    pixi run previews <seed> <out_dir> [key=value ...] [--only=door03]
 """
 import os
 import sys
 import numpy as np
-from rrun import build, parse
-from rdress import dress
-from rmap import diag
-import render
+from wayfarer.build import build, parse
+from wayfarer.preview import diag, dress, view
 
 
 def door_views(W, PL):
@@ -42,7 +40,7 @@ if __name__ == "__main__":
     for name, pos, look in jobs:
         if only and not any(o in name for o in only):
             continue
-        render.view(D, pos=pos, look_at=look, pitch=4, fov=75).save(f"{out}/{name}.jpg", quality=90)
+        view(D, pos=pos, look_at=look, pitch=4, fov=75).save(f"{out}/{name}.jpg", quality=90)
         print(" ", name)
     L = W["n"] * W["dx"]
-    render.view(D, pos=(L / 2, -900), look_at=(L / 2, L / 2, 0), abs_z=3600, pitch=0, fov=62).save(f"{out}/aerial.jpg", quality=90)
+    view(D, pos=(L / 2, -900), look_at=(L / 2, L / 2, 0), abs_z=3600, pitch=0, fov=62).save(f"{out}/aerial.jpg", quality=90)

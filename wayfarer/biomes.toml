@@ -1,7 +1,7 @@
 # What lives in each kind of room, and where.
 #
 # One table per room theme, one sub-table per layer (grass, reeds, bushes,
-# rocks, trees, and the undergrowth: ferns, flowers, heather, scrub). `biomes.py` reads this; `export_game3d.py` turns it into the
+# rocks, trees, and the undergrowth: ferns, flowers, heather, scrub). `biomes.py` reads this; `export.py` turns it into the
 # maps and tree lists the game loads.
 #
 # A layer has an amount (`density`, or `cover` for trees) and, optionally, how

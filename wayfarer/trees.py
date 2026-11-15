@@ -26,9 +26,8 @@ forest floor, so the exporter's cover map reads it too).
 """
 import numpy as np
 from scipy import ndimage
-from dress import _ss
-from noise import fbm
-import biomes
+from . import biomes
+from .noise import fbm, smoothstep
 
 SPRUCE, PINE, OAK, BIRCH, SNAG, BUSH = range(6)
 NAMES = ["spruce", "pine", "oak", "birch", "snag"]
@@ -46,9 +45,9 @@ def site(W, lake, rng):
     z, slope = W["z"], W["slope"]
     px = lambda metres: metres / dx
     # Wet: big drainage area, hollows, and the ground beside a lake.
-    drain = _ss(np.log10(W["area"]), 3.3, 4.8)
+    drain = smoothstep(np.log10(W["area"]), 3.3, 4.8)
     drain = ndimage.maximum_filter(drain, 3)
-    hollow = _ss(ndimage.gaussian_filter(z, px(50)) - z, -1.0, 5.0)
+    hollow = smoothstep(ndimage.gaussian_filter(z, px(50)) - z, -1.0, 5.0)
     lake_d = ndimage.distance_transform_edt(~lake) * dx
     shore = np.exp(-lake_d / 45.0)
     wet = np.clip(0.55 * drain + 0.45 * hollow + 0.6 * shore, 0, 1)
@@ -57,10 +56,10 @@ def site(W, lake, rng):
     gy, _ = np.gradient(ndimage.gaussian_filter(z, px(12)), dx)
     shade = np.clip(0.5 - 1.6 * gy, 0, 1)
     # Exposure: ground that stands above its surroundings.
-    ridge = _ss(z - ndimage.gaussian_filter(z, px(90)), 3.0, 22.0)
+    ridge = smoothstep(z - ndimage.gaussian_filter(z, px(90)), 3.0, 22.0)
     n1 = fbm(n, 10, 4, rng)
     treeline = 400 + 50 * n1
-    high = _ss(z, treeline - 150, treeline)
+    high = smoothstep(z, treeline - 150, treeline)
     return dict(wet=wet, shade=shade, ridge=ridge, high=high, lake_d=lake_d, drain=drain,
                 above=z > treeline, slope=slope)
 
@@ -76,31 +75,31 @@ def canopy_cover(W, S, PL, road, lake, rng, weights, table):
     mid = fbm(n, 70, 3, rng)                                # glades and bays, about 120 m
     want = base + 0.30 * (S["wet"] - 0.35) + 0.14 * (S["shade"] - 0.5) - 0.30 * S["ridge"] \
         + 0.30 * broad + 0.22 * mid
-    stand = _ss(want, 0.42, 0.62)
+    stand = smoothstep(want, 0.42, 0.62)
     # Copses: small clumps on open ground, more of them in farmland.
     clump = fbm(n, 160, 2, rng)
-    copse = _ss(clump, 0.42, 0.58) * np.clip(copses, 0, 1) \
-        * _ss(broad + 0.6 * mid, -0.25, 0.35)
+    copse = smoothstep(clump, 0.42, 0.58) * np.clip(copses, 0, 1) \
+        * smoothstep(broad + 0.6 * mid, -0.25, 0.35)
     # Strips along drainage lines and lake shores.
-    line = ndimage.gaussian_filter(_ss(np.log10(W["area"]), 4.1, 5.0), 1.5)
-    strip = np.clip(1.6 * line, 0, 1) * _ss(mid, -0.55, 0.0)
-    bank = _ss(S["lake_d"], 6, 14) * (1 - _ss(S["lake_d"], 30, 60)) * _ss(mid + 0.5 * broad, -0.2, 0.3)
+    line = ndimage.gaussian_filter(smoothstep(np.log10(W["area"]), 4.1, 5.0), 1.5)
+    strip = np.clip(1.6 * line, 0, 1) * smoothstep(mid, -0.55, 0.0)
+    bank = smoothstep(S["lake_d"], 6, 14) * (1 - smoothstep(S["lake_d"], 30, 60)) * smoothstep(mid + 0.5 * broad, -0.2, 0.3)
     c = np.maximum.reduce([stand, 0.75 * copse, 0.8 * strip, 0.7 * bank])
 
     # Where nothing grows, or less.
-    c = np.minimum(c, np.clip(limit + 0.6 * strip * _ss(limit, 0.05, 0.2), 0, 1))
+    c = np.minimum(c, np.clip(limit + 0.6 * strip * smoothstep(limit, 0.05, 0.2), 0, 1))
     c *= 1 - S["high"]
-    c *= 1 - _ss(S["slope"], 0.55, 0.95)
+    c *= 1 - smoothstep(S["slope"], 0.55, 0.95)
     # Clearings: towns (soft edge), landmarks, roads.
     X, Y = np.meshgrid((np.arange(n) + 0.5) * dx, (np.arange(n) + 0.5) * dx)
     for p in PL["sites"]["town"]:
         d = np.hypot(X - p[0], Y - p[1]) + 40 * mid
-        c *= 0.12 + 0.88 * _ss(d, 120, 230)
+        c *= 0.12 + 0.88 * smoothstep(d, 120, 230)
         c[d < 105] = 0
     for p in PL["sites"]["landmark"]:
         c[np.hypot(X - p[0], Y - p[1]) < 45] = 0
     road_d = ndimage.distance_transform_edt(~road) * dx
-    c *= _ss(road_d, 7, 16)
+    c *= smoothstep(road_d, 7, 16)
     ok = W["land"] & ~lake & (S["lake_d"] > 5) & (W["z"] > 3) & ~S["above"]
     return np.where(ok, np.clip(c, 0, 1), 0.0)
 
@@ -111,10 +110,10 @@ def species_scores(W, S, canopy, rng, weights, table):
     n = W["n"]
     noise = [0.55 * fbm(n, 26, 2, rng) for _ in range(5)]   # stands about 300 m across
     wet, shade, high = S["wet"], S["shade"], S["high"]
-    low = 1 - _ss(W["z"], 90, 240)
+    low = 1 - smoothstep(W["z"], 90, 240)
     edge = 1 - np.abs(canopy - 0.4) / 0.4                    # 1 at a stand's edge
     edge = np.clip(edge, 0, 1)
-    steep = _ss(S["slope"], 0.3, 0.7)
+    steep = smoothstep(S["slope"], 0.3, 0.7)
     shore = np.exp(-S["lake_d"] / 35.0)
     lean = [biomes.mix(weights, table, "trees", name) for name in NAMES]
     return np.stack([
@@ -185,14 +184,14 @@ def plant(W, PL, lake, road, rng, weights, table, log=print):
         lo = np.array([h[0] for h in HEIGHT])[sp]
         hi = np.array([h[1] for h in HEIGHT])[sp]
         # Tall inside a stand, shorter at its edge, on high ground and in young patches.
-        vigour = np.clip(0.25 + 0.75 * _ss(c, 0.15, 0.8) + 0.25 * age[ii, jj], 0, 1) * (1 - 0.6 * S["high"][ii, jj])
+        vigour = np.clip(0.25 + 0.75 * smoothstep(c, 0.15, 0.8) + 0.25 * age[ii, jj], 0, 1) * (1 - 0.6 * S["high"][ii, jj])
         h = lo + (hi - lo) * np.clip(vigour + rng.normal(0, 0.16, len(ii)), 0, 1)
         if small:
             h *= rng.uniform(0.32, 0.6, len(ii))
         return sp, h
 
     cell_area = dx * dx
-    spacing = SPACING_OPEN + (SPACING_CLOSED - SPACING_OPEN) * _ss(canopy, 0.1, 0.85)
+    spacing = SPACING_OPEN + (SPACING_CLOSED - SPACING_OPEN) * smoothstep(canopy, 0.1, 0.85)
     grow = canopy > 0.06
     # Offer several times more darts than can land, so stands fill to their spacing.
     offered = np.where(grow, 3.0 * cell_area / (0.6 * spacing ** 2), 0.0) * np.clip(canopy * 2.2, 0.15, 1)
@@ -205,7 +204,7 @@ def plant(W, PL, lake, road, rng, weights, table, log=print):
     trees = [np.column_stack([xy[keep], h[keep], sp[keep]])]
 
     # Saplings and understorey in the gaps, thickest at stand edges and in young patches.
-    young = np.clip(canopy * (1.3 - canopy) * 2.0, 0, 1) * (0.6 + 0.5 * _ss(age, -0.2, 0.3))
+    young = np.clip(canopy * (1.3 - canopy) * 2.0, 0, 1) * (0.6 + 0.5 * smoothstep(age, -0.2, 0.3))
     ii, jj, xy = candidates(np.where(grow, 0.035 * young * cell_area / 4.0, 0.0), grow)
     sp, h = dress(ii, jj, small=True)
     keep, grid = _throw(xy, np.full(len(xy), 3.2), n_cells, cell, grid)
@@ -230,12 +229,12 @@ def plant(W, PL, lake, road, rng, weights, table, log=print):
     S["edge"] = np.clip(1 - np.abs(ndimage.gaussian_filter(canopy, 1.5) - 0.35) / 0.35, 0, 1)
     habit = lambda key, default=0.0: biomes.mix(weights, table, "bushes", key, default)
     wide = ndimage.gaussian_filter(canopy, 14.0 / dx)
-    mantle = _ss(wide, 0.06, 0.3) * (1 - _ss(canopy, 0.3, 0.6)) * _ss(fbm(n, 70, 2, rng), 0.0, 0.3)
-    gully = _ss(S["drain"], 0.5, 0.9) * _ss(fbm(n, 90, 2, rng), 0.0, 0.3)
-    bank = _ss(S["lake_d"], 5, 10) * (1 - _ss(S["lake_d"], 18, 34)) * _ss(fbm(n, 110, 2, rng), 0.05, 0.3)
+    mantle = smoothstep(wide, 0.06, 0.3) * (1 - smoothstep(canopy, 0.3, 0.6)) * smoothstep(fbm(n, 70, 2, rng), 0.0, 0.3)
+    gully = smoothstep(S["drain"], 0.5, 0.9) * smoothstep(fbm(n, 90, 2, rng), 0.0, 0.3)
+    bank = smoothstep(S["lake_d"], 5, 10) * (1 - smoothstep(S["lake_d"], 18, 34)) * smoothstep(fbm(n, 110, 2, rng), 0.05, 0.3)
     road_d = ndimage.distance_transform_edt(~road) * dx
-    hedge = _ss(road_d, 3.5, 6.5) * (1 - _ss(road_d, 8, 12)) * _ss(fbm(n, 160, 2, rng), 0.15, 0.35)
-    blobs = _ss(fbm(n, 55, 3, rng) + 0.5 * fbm(n, 400, 2, rng), 0.55, 0.72)
+    hedge = smoothstep(road_d, 3.5, 6.5) * (1 - smoothstep(road_d, 8, 12)) * smoothstep(fbm(n, 160, 2, rng), 0.15, 0.35)
+    blobs = smoothstep(fbm(n, 55, 3, rng) + 0.5 * fbm(n, 400, 2, rng), 0.55, 0.72)
     cover = np.maximum.reduce([
         habit("mantle") * mantle, habit("gullies") * gully, habit("banks") * bank,
         habit("hedges") * hedge, habit("thickets") * blobs,
@@ -246,7 +245,7 @@ def plant(W, PL, lake, road, rng, weights, table, log=print):
         & (road_d > 3.5)
     cover = np.where(can_grow, ndimage.gaussian_filter(cover, 0.8), 0.0)
     # Inside a thicket bushes stand shoulder to shoulder; outside, a rare single.
-    per_m2 = 0.12 * _ss(cover, 0.2, 0.6) + np.where(can_grow, habit("singles") / 2500.0, 0.0)
+    per_m2 = 0.12 * smoothstep(cover, 0.2, 0.6) + np.where(can_grow, habit("singles") / 2500.0, 0.0)
     ii, jj, xy = candidates(per_m2 * cell_area * 2.5, per_m2 > 0)
     # Tall in the heart of a thicket, low at its rim. `h` is nominal; the crown
     # stands half as tall again.

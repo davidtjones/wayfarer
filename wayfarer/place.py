@@ -8,11 +8,125 @@ The questions, written down before any result:
   landmark  is each room's landmark seen from its own doors, and the peak from everywhere?
   floor     how much of each room is usable floor, and how much is wall?
 """
+import heapq
 import numpy as np
+from numba import njit, prange
 from scipy import ndimage
-from place import sees_many, sees, find_route, ground, eye, can_see, snap, EYE
 
+EYE = 1.7            # eye height, metres
 WALK = 0.75          # steeper than this (about 37 degrees) cannot be walked
+
+
+@njit(cache=True)
+def _bil(H, inv, x, y):
+    n = H.shape[0]
+    fx = min(max(x * inv - 0.5, 0.0), n - 1.001)
+    fy = min(max(y * inv - 0.5, 0.0), n - 1.001)
+    i, j = int(fy), int(fx)
+    a, b = fx - j, fy - i
+    return (H[i, j] * (1 - a) + H[i, j + 1] * a) * (1 - b) + (H[i + 1, j] * (1 - a) + H[i + 1, j + 1] * a) * b
+
+
+@njit(cache=True)
+def sees(H, dx, ex, ey, ez, tx, ty, tz):
+    d = np.sqrt((tx - ex) ** 2 + (ty - ey) ** 2)
+    k = int(d / (dx * 0.6)) + 1
+    inv = 1.0 / dx
+    for s in range(1, k):
+        u = s / k
+        if _bil(H, inv, ex + (tx - ex) * u, ey + (ty - ey) * u) > ez + (tz - ez) * u:
+            return False
+    return True
+
+
+@njit(parallel=True, cache=True)
+def sees_many(H, dx, eye, T):
+    out = np.zeros(T.shape[0], np.bool_)
+    for i in prange(T.shape[0]):
+        out[i] = sees(H, dx, eye[0], eye[1], eye[2], T[i, 0], T[i, 1], T[i, 2])
+    return out
+
+
+@njit(cache=True)
+def _dijkstra(z, block, extra, dx, si, sj, ti, tj):
+    n, m = z.shape
+    dist = np.full(n * m, 1e18)
+    prev = np.full(n * m, -1)
+    DI = (-1, -1, -1, 0, 0, 1, 1, 1)
+    DJ = (-1, 0, 1, -1, 1, -1, 0, 1)
+    heap = [(0.0, si * m + sj)]
+    dist[si * m + sj] = 0
+    while len(heap) > 0:
+        d, u = heapq.heappop(heap)
+        if d > dist[u]:
+            continue
+        if u == ti * m + tj:
+            break
+        i, j = u // m, u % m
+        for k in range(8):
+            a, b = i + DI[k], j + DJ[k]
+            if a < 0 or b < 0 or a >= n or b >= m or block[a, b]:
+                continue
+            L = dx * np.sqrt(DI[k] ** 2 + DJ[k] ** 2)
+            g = abs(z[a, b] - z[i, j]) / L
+            c = L * (1 + (g / 0.14) ** 2) + extra[a, b]
+            if d + c < dist[a * m + b]:
+                dist[a * m + b] = d + c
+                prev[a * m + b] = u
+                heapq.heappush(heap, (d + c, a * m + b))
+    path = [ti * m + tj]
+    while path[-1] != si * m + sj and prev[path[-1]] >= 0:
+        path.append(prev[path[-1]])
+    return np.array(path[::-1])
+
+
+def find_route(W, a, b, step=20.0):
+    """Easiest walking line from a to b: gentle grades, no swimming."""
+    s = 2
+    z = W["z"][::s, ::s]
+    dx = W["dx"] * s
+    block = (~W["land"] | W["lake"])[::s, ::s]
+    # a ford costs a detour's worth, and a road keeps off the bank beside the water
+    wet = ndimage.maximum_filter(W["river"], s)[::s, ::s] & ~block
+    bank = (W["river_z"] > -999)[::s, ::s] & ~block
+    extra = np.where(wet, 160.0, np.where(bank, 40.0, 0.0))
+    ij = lambda p: (int(p[1] / dx), int(p[0] / dx))
+    block = block.copy()
+    for p in (a, b):
+        block[ij(p)] = False
+    path = _dijkstra(z, block, extra, dx, *ij(a), *ij(b))
+    m = z.shape[1]
+    xy = np.stack([(path % m + 0.5) * dx, (path // m + 0.5) * dx], 1)
+    for _ in range(3):                                   # relax the staircase
+        xy[1:-1] = 0.25 * xy[:-2] + 0.5 * xy[1:-1] + 0.25 * xy[2:]
+    seg = np.hypot(*np.diff(xy, axis=0).T)
+    d = np.concatenate([[0], np.cumsum(seg)])
+    t = np.arange(0, d[-1], step)
+    return np.stack([np.interp(t, d, xy[:, 0]), np.interp(t, d, xy[:, 1])], 1)
+
+
+def ground(W, p):
+    return _bil(W["z"], 1.0 / W["dx"], p[0], p[1])
+
+
+def eye(W, p, h=EYE):
+    return np.array([p[0], p[1], ground(W, p) + h])
+
+
+def can_see(W, p, q, top):
+    e = eye(W, p)
+    return bool(sees(W["z"], W["dx"], e[0], e[1], e[2], q[0], q[1], ground(W, q) + top))
+
+
+def snap(W, p, radius, score):
+    """Best cell within radius of p under a score array."""
+    dx, n = W["dx"], W["n"]
+    i0, j0, r = int(p[1] / dx), int(p[0] / dx), int(radius / dx)
+    sl = (slice(max(i0 - r, 0), min(i0 + r + 1, n)), slice(max(j0 - r, 0), min(j0 + r + 1, n)))
+    sub = score[sl]
+    k = np.unravel_index(np.argmax(sub), sub.shape)
+    return np.array([(sl[1].start + k[1] + 0.5) * dx, (sl[0].start + k[0] + 0.5) * dx])
+
 
 
 def _pick(mask, k, rng):
@@ -111,10 +225,9 @@ def grade_roads(W, roads, half=10.0, fade=38.0):
             den[i - r:i + r + 1, j - r:j + r + 1] += w
     m = (den > 0) & W["land"] & ~W["lake"]
     a = np.clip(den, 0, 1)
-    if "river" in W:
-        # a road leaves the river's bed and banks as they are, and comes down to a ford
-        off = ndimage.distance_transform_edt(W["river_z"] < -999) * dx
-        a = a * np.clip(off / 30.0, 0, 1) ** 2
+    # a road leaves the river's bed and banks as they are, and comes down to a ford
+    off = ndimage.distance_transform_edt(W["river_z"] < -999) * dx
+    a = a * np.clip(off / 30.0, 0, 1) ** 2
     z[m] = z[m] * (1 - a[m]) + (num[m] / den[m]) * a[m]
     gy, gx = np.gradient(z, dx)
     W["slope"] = np.hypot(gx, gy)

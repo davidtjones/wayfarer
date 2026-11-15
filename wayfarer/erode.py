@@ -1,9 +1,11 @@
-"""Stage 1b: land-forming. Turns the design fields into land that reads natural.
+"""Land-forming. Turns the design fields into land that reads natural.
 
 Rivers cut down in proportion to the water they carry, slopes fail above a
 stable angle, soil creeps. Run long enough, this gives branching valleys and
-ridges whose heights follow the designed uplift. The lake and sea are pinned,
-so the designed water stays where the brief put it.
+ridges whose heights follow the designed uplift. Lakes and sea are pinned, so
+the designed water stays where the design put it.
+
+`flow` routes water over a finished surface: who drains where, and how much.
 """
 import heapq
 import numpy as np
@@ -148,3 +150,10 @@ def form(lay, steps=140, dt=1.0e4, mexp=0.4, log=None):
         if log and s % 20 == 0:
             log(f"  step {s:3d}  max {z.max():6.0f} m  mean land {z[f['land']].mean():5.0f} m")
     return z, area
+
+
+def flow(z, sea, dx, seed=0):
+    zf = fill(z, sea, 1e-3)
+    jit = np.random.default_rng(seed + 3).uniform(0, 0.6, z.shape + (8,))
+    rcv, dist, order, area = route(zf, sea, dx, jit)
+    return zf, rcv, order, area

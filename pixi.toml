@@ -9,3 +9,13 @@ numpy = ">=2,<3"
 scipy = ">=1.13"
 numba = ">=0.61"
 pillow = ">=10"
+
+[tasks]
+# Arguments after the task name are passed through, e.g. `pixi run export 0 wayfarer-art rooms=9`.
+build = "python -m wayfarer.build"                 # build and measure one rooms world
+export = "python -m wayfarer.export"               # write a world into game3d
+previews = "python -m tools.previews"              # software-rendered preview views
+sweep = "python -m tools.sweep"                    # vary one design knob at a time
+sweep-table = "python -m tools.sweep_table"        # summarise a sweep
+gallery = "python -m tools.gallery"                # page of game3d captures
+shoot = "sh tools/shoot.sh"                        # export, photograph walls in game3d, contact sheet
